@@ -1,0 +1,15 @@
+{
+  "name": "visualizacion",
+  "version": "1.0.0",
+  "main": "3dLibs.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "lil-gui": "^0.20.0"
+  }
+}
