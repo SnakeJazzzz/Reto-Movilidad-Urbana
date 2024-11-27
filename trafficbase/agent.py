@@ -53,6 +53,14 @@ class Traffic_Light(Agent):
             return "yellow"
 
 class Car(Agent):
+    """
+        Car agent with type differentiation.
+        Args:
+            unique_id: Unique ID for the car.
+            model: Reference to the model.
+            pos: Initial position.
+            car_type: "A" or "B", determines behavior at traffic lights.
+    """
     possibleLaneChange = {
         (0, 1): [(-1, 1), (1, 1)],
         (0, -1): [(-1, -1), (1, -1)],
@@ -67,7 +75,7 @@ class Car(Agent):
     }
 
 
-    def __init__(self, unique_id, model, pos):
+    def __init__(self, unique_id, model, pos, car_type="A"):
         super().__init__(unique_id, model)
         self.originalPosition = pos
         self.position = pos
@@ -77,7 +85,10 @@ class Car(Agent):
         self.routeIndex = 0
         self.model.activeCars += 1
         self.stepCount = 0
-
+        self.direction = 0
+        self.directionWritten = "up"
+        self.car_type = car_type  # Store car type
+        
     def GetRoute(self, start):
         key = str(start) + str(self.destination)
         if key in self.model.memo:
@@ -106,37 +117,8 @@ class Car(Agent):
         return []  # Return empty if no route found
 
     def step(self):
-        if self.position == self.destination:
-            self.model.grid.remove_agent(self)
-            self.model.schedule.remove(self)
-            self.model.activeCars -= 1
-            self.model.addStepCount(self.stepCount)
-            return
-
-        if not self.route or self.routeIndex >= len(self.route):
-            self.timeStopped += 1
-            return
-
-        next_move = self.route[self.routeIndex]
-        canMove = True
-
-        for agent in self.model.grid.get_cell_list_contents([next_move]):
-            if isinstance(agent, Car) or (isinstance(agent, Traffic_Light) and not agent.go):
-                canMove = False
-
-        if canMove:
-            self.model.grid.move_agent(self, next_move)
-            self.position = next_move
-            self.routeIndex += 1
-            self.timeStopped = 0
-        else:
-            self.timeStopped += 1
-        self.stepCount += 1
-
-
-    def step(self):
         """
-        Moves the car toward its destination.
+        Moves the car toward its destination, following its type rules.
         """
         if self.position == self.destination:
             print(f"Car {self.unique_id} reached destination {self.destination}")
@@ -146,14 +128,24 @@ class Car(Agent):
             self.model.addStepCount(self.stepCount)
             return
 
+        if not self.route:
+            print(f"Car {self.unique_id} has no route to destination {self.destination}")
+            self.model.grid.remove_agent(self)
+            self.model.schedule.remove(self)
+            self.model.activeCars -= 1
+            return
+
         next_move = self.route[self.routeIndex]
         canMove = True
 
         for agent in self.model.grid.get_cell_list_contents([next_move]):
             if isinstance(agent, Car):
                 canMove = False
-            elif isinstance(agent, Traffic_Light) and not agent.go:
-                canMove = False
+            elif isinstance(agent, Traffic_Light):
+                if agent.state == "red":
+                    canMove = False
+                elif agent.state == "yellow" and self.car_type == "A":
+                    canMove = False
 
         if canMove:
             self.model.grid.move_agent(self, next_move)
@@ -163,7 +155,6 @@ class Car(Agent):
         else:
             self.timeStopped += 1
             print(f"Car {self.unique_id} stopped at {self.position}")
-
 class Destination(Agent):
     """
     Destination agent representing a target location for cars.

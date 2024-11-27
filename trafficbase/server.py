@@ -39,13 +39,15 @@ def agent_portrayal(agent):
         portrayal["h"] = 0.8
 
     elif isinstance(agent, Car):
-        portrayal["Color"] = "black"
+        if agent.car_type == "A":
+            portrayal["Color"] = "black"
+        elif agent.car_type == "B":
+            portrayal["Color"] = "blue"  # Different color for Type B cars
         portrayal["Shape"] = "circle"
         portrayal["Layer"] = 1
         portrayal["r"] = 0.5
 
     return portrayal
-
 
 # Load the map file to determine grid size and content
 map_file_path = "city_files/2022_base.txt"

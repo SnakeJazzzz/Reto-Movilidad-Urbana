@@ -5,6 +5,7 @@ from agent import *
 from collections import deque
 import pprint
 import mesa
+import random
 
 
 class CityModel(Model):
@@ -153,7 +154,9 @@ class CityModel(Model):
         if self.schedule.steps % 2 == 0:
             for pos in self.spawnPoints:
                 if self._is_empty(pos):
-                    car = Car(self.unique_id, self, pos)
+                    # Randomly assign car type with specified probabilities
+                    car_type = random.choices(["A", "B"], weights=[0.7, 0.3], k=1)[0]
+                    car = Car(self.unique_id, self, pos, car_type=car_type)
                     self.unique_id += 1
                     self.schedule.add(car)
                     self.grid.place_agent(car, pos)
