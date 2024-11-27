@@ -13,8 +13,13 @@ model = None
 @app.route('/init', methods=['POST'])
 def init_model():
     global model
-    model = CityModel()
-    return jsonify({'message': 'Modelo inicializado'})
+    #model = CityModel()
+    try:
+        model = CityModel()
+        return jsonify({"message": "Modelo inicializado"}), 200
+    except Exception as e:
+        print(f"Error al inicializar el modelo: {e}")
+        return jsonify({"message": "Error al inicializar el modelo"}), 500
 
 @app.route('/getAgents', methods=['GET'])
 def get_agents():
@@ -46,8 +51,20 @@ def get_traffic_lights():
 
 @app.route('/update', methods=['GET'])
 def update_model():
-    model.step()
-    return jsonify({'message': 'Modelo actualizado'})
+    global model
+    if model is None:
+        return jsonify({"message": "El modelo no está inicializado"}), 400
+    try:
+        model.step()
+        return jsonify({"message": "Modelo actualizado"}), 200
+    except Exception as e:
+        print(f"Error al actualizar el modelo: {e}")
+        return jsonify({"message": "Error al actualizar el modelo"}), 500
+
+#Checar si sirve el servidor
+@app.route('/', methods=['GET'])
+def home():
+    return 'Servidor de simulación funcionando', 200
 
 if __name__ == '__main__':
     app.run(host='localhost', port=8585)
