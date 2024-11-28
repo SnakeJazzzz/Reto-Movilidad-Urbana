@@ -77,7 +77,7 @@ class CityModel(Model):
         self.activeCars = 0
         self.memoCount = 0
         self.noMemoCount = 0
-
+        self.arrived = 0  
         self.stepTracker = {i: 0 for i in range(1, steps_dist_max + 1)}
 
         self.datacollector = mesa.DataCollector(
@@ -160,6 +160,40 @@ class CityModel(Model):
                     self.unique_id += 1
                     self.schedule.add(car)
                     self.grid.place_agent(car, pos)
+                    
+        if self.schedule.steps % 5 == 0:  # Adjust pedestrian spawn frequency
+            for agent in self.schedule.agents:
+                if isinstance(agent, Traffic_Light) and agent.red_duration == 15:  # "S" traffic lights
+                    start_pos, end_pos = self._get_pedestrian_positions(agent)
+                    if start_pos and end_pos:
+                        print(f"Spawning pedestrian at {start_pos}, crossing to {end_pos}")
+                        peaton = Peaton(self.unique_id, self, start_pos, end_pos)
+                        self.unique_id += 1
+                        self.schedule.add(peaton)
+                        self.grid.place_agent(peaton, start_pos)
+                    else:
+                        print(f"No valid crossing positions for traffic light at {agent.pos}")
+
+    def _get_pedestrian_positions(self, traffic_light):
+        """
+        Get the starting and ending positions for a pedestrian based on adjacent obstacles.
+        """
+        x, y = traffic_light.pos
+        obstacles = []
+
+        # Check for obstacles adjacent to the traffic light
+        for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            neighbor_pos = (x + dx, y + dy)
+            agents = self.grid.get_cell_list_contents(neighbor_pos)
+            if any(isinstance(a, Obstacle) for a in agents):
+                obstacles.append(neighbor_pos)
+
+        if len(obstacles) >= 2:
+            print(f"Obstacles found for pedestrian at {traffic_light.pos}: {obstacles}")
+            return obstacles[0], obstacles[1]
+
+        print(f"No valid obstacles found for pedestrian at {traffic_light.pos}")
+        return None, None  # No valid pedestrian route
 
     def _is_empty(self, pos):
         """
