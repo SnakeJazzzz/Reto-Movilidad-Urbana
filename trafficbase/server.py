@@ -37,12 +37,6 @@ def agent_portrayal(agent):
         portrayal["Layer"] = 0
         portrayal["w"] = 0.8
         portrayal["h"] = 0.8
-    
-    elif isinstance(agent, Peaton):
-        portrayal["Shape"] = "circle"
-        portrayal["Color"] = "blue"
-        portrayal["Layer"] = 2
-        portrayal["r"] = 0.5
 
     elif isinstance(agent, Car):
         if agent.car_type == "A":

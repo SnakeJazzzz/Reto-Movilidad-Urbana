@@ -51,54 +51,43 @@ class Traffic_Light(Agent):
             return "green"
         else:
             return "yellow"
-
 class Car(Agent):
+    """
+    Car agent with type differentiation.
+    Args:
+        unique_id: Unique ID for the car.
+        model: Reference to the model.
+        pos: Initial position.
+        car_type: "A" or "B", determines behavior at traffic lights.
+    """
     possibleLaneChange = {
         (0, 1): [(-1, 1), (1, 1)],
         (0, -1): [(-1, -1), (1, -1)],
         (1, 0): [(1, 1), (1, -1)],
         (-1, 0): [(-1, 1), (-1, -1)],
     }
-    directionsDecode = {
-        (0, 1): "up",
-        (0, -1): "down",
-        (1, 0): "right",
-        (-1, 0): "left",
-    }
 
     def __init__(self, unique_id, model, pos, car_type="A"):
-        """
-        Initializes a Car agent.
-        Args:
-            unique_id: Unique ID of the car.
-            model: Reference to the simulation model.
-            pos: Starting position of the car.
-            car_type: Type of car, which affects behavior (e.g., "A" or "B").
-        """
         super().__init__(unique_id, model)
         self.originalPosition = pos
         self.position = pos
-        self.time_stopped = 0  # Tracks how long the car has been stopped
+        self.timeStopped = 0
         self.destination = self.model.getRandomDest()
         self.route = self.GetRoute(self.position)
         self.routeIndex = 0
         self.model.activeCars += 1
         self.stepCount = 0
         self.direction = 0
-        self.directionWritten = "up"
-        self.car_type = car_type  # Store car type (e.g., "A" or "B")
-        self.patience_level = 3 if car_type == "A" else 1  # Patience level differs by car type
+        self.car_type = car_type
+        self.patience = 3 if car_type == "A" else 1  # Set patience based on car type
 
     def GetRoute(self, start):
-        """
-        Finds the shortest route from start to the destination.
-        Uses memoization to avoid recalculating routes.
-        """
         key = str(start) + str(self.destination)
         if key in self.model.memo:
             self.model.memoCount += 1
             return self.model.memo[key]
 
+        # Increment noMemoCount when no memoized route is found
         self.model.noMemoCount += 1
         q = deque([(start, [])])
         visited = {start}
@@ -117,133 +106,318 @@ class Car(Agent):
                     visited.add(move)
                     q.append((move, path + [move]))
 
-        return []
+        return []  # Return empty if no route found
 
-    def can_change_lane(self):
+    def _is_valid_lane_change(self, target):
         """
-        Checks if the car can change lanes based on its patience level.
-        Expands the search for alternative positions when initial diagonal moves fail.
+        Checks if a lane change is valid.
         """
-        if self.time_stopped >= self.patience_level:
-            print(f"Car {self.unique_id} attempting lane change from {self.position}")
-            
-            # Check diagonal positions first
-            for direction in self.possibleLaneChange[self.direction]:
-                new_pos = (self.position[0] + direction[0], self.position[1] + direction[1])
-                if self._is_valid_lane_change(new_pos):
-                    print(f"Car {self.unique_id} successfully changing to {new_pos}")
-                    self.ChangeRoute(new_pos)
-                    return True
-            
-            # Expand search to adjacent non-diagonal positions
-            print(f"Car {self.unique_id} expanding search for lane change.")
-            for offset in [(0, 1), (0, -1), (1, 0), (-1, 0)]:  # Adjacent positions
-                new_pos = (self.position[0] + offset[0], self.position[1] + offset[1])
-                if self._is_valid_lane_change(new_pos):
-                    print(f"Car {self.unique_id} changing to adjacent position {new_pos}")
-                    self.ChangeRoute(new_pos)
-                    return True
-            
-            print(f"Car {self.unique_id} could not find a valid lane change.")
-        return False
+        if not (0 <= target[0] < self.model.width and 0 <= target[1] < self.model.height):
+            print(f"[DEBUG] Lane change invalid for Car {self.unique_id}: {target} out of bounds")
+            return False
 
-    def _is_valid_lane_change(self, new_pos):
-        """
-        Helper method to check if a lane change position is valid.
-        """
-        x, y = new_pos
-        if 0 <= x < self.model.grid.width and 0 <= y < self.model.grid.height:
-            if self.model.grid.is_cell_empty(new_pos):
-                return True
-        return False
+        for agent in self.model.grid.get_cell_list_contents([target]):
+            if isinstance(agent, (Car, Obstacle)):
+                print(f"[DEBUG] Lane change invalid for Car {self.unique_id}: {target} occupied by {agent}")
+                return False
 
-    def ChangeRoute(self, next_move):
-        """
-        Updates the route starting from the new position after a lane change.
-        Args:
-            next_move: The new position after the lane change.
-        """
-        print(f"Car {self.unique_id} updating route after lane change to {next_move}")
-        self.route = [next_move] + self.GetRoute(next_move)  # Update route from the new position
-        self.routeIndex = 0  # Reset route index
-        print(f"Car {self.unique_id} new route: {self.route}")
-
-    def move(self):
-        """
-        Moves the car along its route or attempts a lane change if blocked.
-        Recalculates the route or removes stalled cars to reduce gridlock.
-        """
-        if self.position == self.destination:
-            print(f"Car {self.unique_id} has arrived at destination {self.destination}")
-            self.model.grid.remove_agent(self)
-            self.model.schedule.remove(self)
-            self.model.activeCars -= 1
-            self.model.arrived += 1
-            self.model.addStepCount(self.stepCount)
-            return
-
-        next_move = self.route[self.routeIndex]
-        self.direction = (next_move[0] - self.position[0], next_move[1] - self.position[1])
-        if self.direction in self.directionsDecode:
-            self.directionWritten = self.directionsDecode[self.direction]
-
-        canMove = True
-        for agent in self.model.grid.get_cell_list_contents([self.position]):
-            if isinstance(agent, Traffic_Light) and not agent.go:
-                print(f"Car {self.unique_id} stopped at traffic light at {self.position}")
-                canMove = False
-
-        if canMove:
-            for agent in self.model.grid.get_cell_list_contents([next_move]):
-                if isinstance(agent, Car):
-                    print(f"Car {self.unique_id} blocked by another car at {next_move}")
-                    if len(self.route) > 0 and self.time_stopped >= 1 and self.can_change_lane():
-                        print(f"Car {self.unique_id} lane change successful")
-                        next_move = self.route[self.routeIndex]
-                    else:
-                        canMove = False
-
-        if canMove:
-            print(f"Car {self.unique_id} moving to {next_move}")
-            self.model.grid.move_agent(self, next_move)
-            self.position = next_move
-            self.routeIndex += 1
-            self.time_stopped = 0
-        else:
-            self.time_stopped += 1
-            print(f"Car {self.unique_id} is blocked and has waited {self.time_stopped} steps")
-            
-            # Recalculate route or remove car after prolonged blockage
-            if self.time_stopped > 10:
-                print(f"Car {self.unique_id} recalculating route due to prolonged blockage.")
-                self.route = self.GetRoute(self.position)
-                self.routeIndex = 0
-                if not self.route:
-                    print(f"Car {self.unique_id} removed due to inability to proceed.")
-                    self.model.grid.remove_agent(self)
-                    self.model.schedule.remove(self)
-                    self.model.activeCars -= 1
+        print(f"[DEBUG] Lane change valid for Car {self.unique_id}: {target}")
+        return True
 
     def step(self):
         """
-        Steps through the simulation.
+        Moves the car toward its destination, following its type rules.
         """
-        self.move()
-        self.stepCount += 1
+        if self.position == self.destination:
+            print(f"Car {self.unique_id} reached destination {self.destination}")
+            self.model.grid.remove_agent(self)
+            self.model.schedule.remove(self)
+            self.model.activeCars -= 1
+            self.model.addStepCount(self.stepCount)
+            return
+
+        if not self.route:
+            print(f"Car {self.unique_id} has no route to destination {self.destination}")
+            self.model.grid.remove_agent(self)
+            self.model.schedule.remove(self)
+            self.model.activeCars -= 1
+            return
+
+        next_move = self.route[self.routeIndex]
+        canMove = True
+        reason = "clear path"
+
+        for agent in self.model.grid.get_cell_list_contents([next_move]):
+            if isinstance(agent, Car):
+                canMove = False
+                reason = f"blocked by another car {agent.unique_id}"
+            elif isinstance(agent, Traffic_Light):
+                if agent.state == "red":
+                    canMove = False
+                    reason = "red light"
+                elif agent.state == "yellow" and self.car_type == "A":
+                    canMove = False
+                    reason = "yellow light (Type A car)"
+
+        if canMove:
+            self.model.grid.move_agent(self, next_move)
+            self.position = next_move
+            self.routeIndex += 1
+            self.timeStopped = 0
+            print(f"Car {self.unique_id} moved to {self.position}")
+        else:
+            self.timeStopped += 1
+            print(f"[DEBUG] Car {self.unique_id} stopped at {self.position}. Reason: {reason}")
+
+            if self.timeStopped >= self.patience:
+                print(f"[DEBUG] Car {self.unique_id} exceeded patience ({self.patience}). Evaluating lane change.")
+                if self.direction in self.possibleLaneChange:
+                    for lane_change in self.possibleLaneChange[self.direction]:
+                        target = (self.position[0] + lane_change[0], self.position[1] + lane_change[1])
+                        if self._is_valid_lane_change(target):
+                            self.model.grid.move_agent(self, target)
+                            self.position = target
+                            self._update_direction()
+                            self.changeRoute()
+                            self.timeStopped = 0
+                            print(f"[DEBUG] Car {self.unique_id} successfully changed lane to {self.position}")
+                            return
+
+    def _update_direction(self):
+        """
+        Updates the car's direction based on the next route step.
+        """
+        if self.routeIndex < len(self.route):
+            next_pos = self.route[self.routeIndex]
+            self.direction = (next_pos[0] - self.position[0], next_pos[1] - self.position[1])
+        else:
+            self.direction = (0, 0)
+    def step(self):
+        """
+        Moves the car toward its destination, following its type rules.
+        """
+        if self.position == self.destination:
+            print(f"Car {self.unique_id} reached destination {self.destination}")
+            self.model.grid.remove_agent(self)
+            self.model.schedule.remove(self)
+            self.model.activeCars -= 1
+            self.model.addStepCount(self.stepCount)
+            return
+
+        if not self.route:
+            print(f"Car {self.unique_id} has no route to destination {self.destination}")
+            self.model.grid.remove_agent(self)
+            self.model.schedule.remove(self)
+            self.model.activeCars -= 1
+            return
+
+        next_move = self.route[self.routeIndex]
+        canMove = True
+        reason = "clear path"
+
+        for agent in self.model.grid.get_cell_list_contents([next_move]):
+            if isinstance(agent, Car):
+                canMove = False
+                reason = f"blocked by another car {agent.unique_id}"
+            elif isinstance(agent, Traffic_Light):
+                if agent.state == "red":
+                    canMove = False
+                    reason = "red light"
+                elif agent.state == "yellow" and self.car_type == "A":
+                    canMove = False
+                    reason = "yellow light (Type A car)"
+
+        if canMove:
+            self.model.grid.move_agent(self, next_move)
+            self.position = next_move
+            self.routeIndex += 1
+            self.timeStopped = 0  # Reset stop time after moving
+            print(f"Car {self.unique_id} moved to {self.position}")
+        else:
+            self.timeStopped += 1
+            print(f"[DEBUG] Car {self.unique_id} stopped at {self.position}. Reason: {reason}")
+
+            # Attempt lane change if patience is exceeded
+            if self.timeStopped >= self.patience:
+                if self.direction in self.possibleLaneChange:
+                    for lane_change in self.possibleLaneChange[self.direction]:
+                        target = (self.position[0] + lane_change[0], self.position[1] + lane_change[1])
+                        if self._is_valid_lane_change(target):
+                            self.model.grid.move_agent(self, target)
+                            self.position = target
+                            self._update_direction()
+                            self.changeRoute()  # Recalculate route after lane change
+                            self.timeStopped = 0  # Reset stop time after lane change
+                            print(f"[DEBUG] Car {self.unique_id} changed lane to {self.position}")
+                            return
+
+    def _update_direction(self):
+        """
+        Updates the car's direction based on the next route step.
+        """
+        if self.routeIndex < len(self.route):
+            next_pos = self.route[self.routeIndex]
+            self.direction = (next_pos[0] - self.position[0], next_pos[1] - self.position[1])
+        else:
+            self.direction = (0, 0)
+
+    """
+    Car agent with type differentiation.
+    Args:
+        unique_id: Unique ID for the car.
+        model: Reference to the model.
+        pos: Initial position.
+        car_type: "A" or "B", determines behavior at traffic lights.
+    """
+    possibleLaneChange = {
+        (0, 1): [(-1, 1), (1, 1)],
+        (0, -1): [(-1, -1), (1, -1)],
+        (1, 0): [(1, 1), (1, -1)],
+        (-1, 0): [(-1, 1), (-1, -1)],
+    }
+
+    def __init__(self, unique_id, model, pos, car_type="A"):
+        super().__init__(unique_id, model)
+        self.originalPosition = pos
+        self.position = pos
+        self.timeStopped = 0
+        self.destination = self.model.getRandomDest()
+        self.route = self.GetRoute(self.position)
+        self.routeIndex = 0
+        self.model.activeCars += 1
+        self.stepCount = 0
+        self.direction = 0
+        self.car_type = car_type  # Store car type
+
+    def GetRoute(self, start):
+        key = str(start) + str(self.destination)
+        if key in self.model.memo:
+            self.model.memoCount += 1
+            return self.model.memo[key]
+
+        # Increment noMemoCount when no memoized route is found
+        self.model.noMemoCount += 1
+        q = deque([(start, [])])
+        visited = {start}
+
+        while q:
+            cur, path = q.popleft()
+            if cur == self.destination:
+                self.model.memo[key] = path
+                return path
+
+            if cur not in self.model.graph:
+                continue
+
+            for move in self.model.graph[cur]:
+                if move not in visited:
+                    visited.add(move)
+                    q.append((move, path + [move]))
+
+        return []  # Return empty if no route found
+
+    def _is_valid_lane_change(self, target):
+        """
+        Checks if a lane change is valid.
+        """
+        # Ensure the target is within bounds
+        if not (0 <= target[0] < self.model.width and 0 <= target[1] < self.model.height):
+            print(f"[DEBUG] Lane change invalid: {target} out of bounds")
+            return False
+
+        # Ensure the target cell is free of cars and obstacles
+        for agent in self.model.grid.get_cell_list_contents([target]):
+            if isinstance(agent, (Car, Obstacle)):
+                print(f"[DEBUG] Lane change invalid: {target} occupied by {agent}")
+                return False
+
+        return True
+
+    def changeRoute(self):
+        """
+        Recalculates the route to the destination from the car's current position
+        after a lane change.
+        """
+        self.route = self.GetRoute(self.position)  # Recalculate the route
+        self.routeIndex = 0  # Reset the index to start following the new route
+        print(f"[DEBUG] Car {self.unique_id} recalculated route: {self.route}")
+
+    def step(self):
+        """
+        Moves the car toward its destination, following its type rules.
+        """
+        if self.position == self.destination:
+            print(f"Car {self.unique_id} reached destination {self.destination}")
+            self.model.grid.remove_agent(self)
+            self.model.schedule.remove(self)
+            self.model.activeCars -= 1
+            self.model.addStepCount(self.stepCount)
+            return
+
+        if not self.route:
+            print(f"Car {self.unique_id} has no route to destination {self.destination}")
+            self.model.grid.remove_agent(self)
+            self.model.schedule.remove(self)
+            self.model.activeCars -= 1
+            return
+
+        next_move = self.route[self.routeIndex]
+        canMove = True
+        reason = "clear path"
+
+        # Check cell contents for movement rules
+        for agent in self.model.grid.get_cell_list_contents([next_move]):
+            if isinstance(agent, Car):
+                canMove = False
+                reason = f"blocked by another car {agent.unique_id}"
+            elif isinstance(agent, Traffic_Light):
+                if agent.state == "red":
+                    canMove = False
+                    reason = "red light"
+                elif agent.state == "yellow" and self.car_type == "A":
+                    canMove = False
+                    reason = "yellow light (Type A car)"
+
+        if canMove:
+            self.model.grid.move_agent(self, next_move)
+            self.position = next_move
+            self.routeIndex += 1
+            print(f"Car {self.unique_id} moved to {self.position}")
+        else:
+            print(f"[DEBUG] Car {self.unique_id} stopped at {self.position}. Reason: {reason}")
+
+            # Attempt lane change if blocked
+            if self.direction in self.possibleLaneChange:
+                for lane_change in self.possibleLaneChange[self.direction]:
+                    target = (self.position[0] + lane_change[0], self.position[1] + lane_change[1])
+                    if self._is_valid_lane_change(target):
+                        self.model.grid.move_agent(self, target)
+                        self.position = target
+                        self._update_direction()
+                        self.changeRoute()  # Recalculate route after lane change
+                        print(f"[DEBUG] Car {self.unique_id} changed lane to {self.position}")
+                        return
+
+            # Increment stop time if no movement
+            self.timeStopped += 1
+
+    def _update_direction(self):
+        """
+        Updates the car's direction based on the next route step.
+        """
+        if self.routeIndex < len(self.route):
+            next_pos = self.route[self.routeIndex]
+            self.direction = (next_pos[0] - self.position[0], next_pos[1] - self.position[1])
+        else:
+            self.direction = (0, 0)
+
 class Destination(Agent):
     """
     Destination agent representing a target location for cars.
     """
 
     def __init__(self, unique_id, model):
-        """
-        Initializes a Destination agent.
-        Args:
-            unique_id: Unique ID of the destination.
-            model: Reference to the simulation model.
-        """
         super().__init__(unique_id, model)
-
 
 class Obstacle(Agent):
     """
@@ -251,64 +425,7 @@ class Obstacle(Agent):
     """
 
     def __init__(self, unique_id, model):
-        """
-        Initializes an Obstacle agent.
-        Args:
-            unique_id: Unique ID of the obstacle.
-            model: Reference to the simulation model.
-        """
         super().__init__(unique_id, model)
-
-
-class Peaton(Agent):
-    """
-    Peaton (pedestrian) agent that crosses the road at traffic lights.
-    """
-
-    def __init__(self, unique_id, model, start_pos, end_pos):
-        """
-        Initialize a pedestrian.
-        Args:
-            unique_id: Unique ID for the pedestrian.
-            model: Reference to the model.
-            start_pos: Starting position of the pedestrian.
-            end_pos: End position for crossing.
-        """
-        super().__init__(unique_id, model)
-        self.position = start_pos
-        self.end_pos = end_pos
-        self.crossing = False
-
-    def step(self):
-        """
-        Move the pedestrian if the traffic light allows it.
-        """
-        if self.position == self.end_pos:
-            # Peaton has crossed, remove them
-            print(f"Peaton {self.unique_id} has finished crossing at {self.end_pos}")
-            self.model.grid.remove_agent(self)
-            self.model.schedule.remove(self)
-            return
-
-        # Check the traffic light state at the crossing
-        for agent in self.model.grid.get_cell_list_contents([self.position]):
-            if isinstance(agent, Traffic_Light) and agent.state == "red":
-                self.crossing = True
-
-        if self.crossing:
-            # Move one step toward the end position
-            move_x = self.end_pos[0] - self.position[0]
-            move_y = self.end_pos[1] - self.position[1]
-            next_pos = (
-                self.position[0] + (1 if move_x > 0 else -1 if move_x < 0 else 0),
-                self.position[1] + (1 if move_y > 0 else -1 if move_y < 0 else 0),
-            )
-
-            if self.model.grid.is_cell_empty(next_pos):
-                print(f"Peaton {self.unique_id} moving to {next_pos}")
-                self.model.grid.move_agent(self, next_pos)
-                self.position = next_pos
-
 
 class Road(Agent):
     """
@@ -325,4 +442,3 @@ class Road(Agent):
         """
         super().__init__(pos, model)
         self.direction = direction
-        print(f"Road created at {pos} with direction {direction}")
